@@ -32,7 +32,9 @@
 #include "common/filter.h"
 
 #include "drivers/adc.h"
+#include "drivers/ina226.h"
 
+#include "pg/ina226.h"
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
 
@@ -43,7 +45,7 @@
 #include "current.h"
 
 const char * const currentMeterSourceNames[CURRENT_METER_COUNT] = {
-    "NONE", "ADC", "VIRTUAL", "ESC", "MSP"
+    "NONE", "ADC", "VIRTUAL", "ESC", "MSP", "INA226"
 };
 
 const uint8_t currentMeterIds[] = {
@@ -124,7 +126,7 @@ static int32_t currentMeterADCToCentiamps(const uint16_t src)
     return centiAmps; // Returns Centiamps to maintain compatability with the rest of the code
 }
 
-#if defined(USE_ADC) || defined(USE_VIRTUAL_CURRENT_METER)
+#if defined(USE_ADC) || defined(USE_VIRTUAL_CURRENT_METER) || defined(USE_INA226)
 static void updateCurrentmAhDrawnState(currentMeterMAhDrawnState_t *state, int32_t amperageLatest, int32_t lastUpdateAt)
 {
     state->mAhDrawnF = state->mAhDrawnF + (amperageLatest * lastUpdateAt / (100.0f * 1000 * 3600));
@@ -169,6 +171,76 @@ void currentMeterADCRead(currentMeter_t *meter)
 
     DEBUG_SET(DEBUG_CURRENT_SENSOR, 2, meter->amperageLatest);
     DEBUG_SET(DEBUG_CURRENT_SENSOR, 3, meter->mAhDrawn);
+}
+
+//
+// INA226
+//
+
+#ifdef USE_INA226
+static currentMeterINA226State_t currentMeterINA226State;
+static pt1Filter_t ina226IBatFilter;
+
+// The shunt voltage is converted with the configured shunt value rather than
+// with the device's calibration register, which keeps the full 2.5uV/LSB
+// resolution of the shunt reading.
+int32_t currentMeterINA226Convert(int32_t shuntMicrovolts)
+{
+    const ina226Config_t *config = ina226Config();
+
+    if (config->shuntMicroOhms == 0) {
+        return 0;
+    }
+
+    if (config->currentInvert) {
+        shuntMicrovolts = -shuntMicrovolts;
+    }
+
+    return (shuntMicrovolts * 100) / (int32_t)config->shuntMicroOhms + config->currentOffset;
+}
+#endif
+
+void currentMeterINA226Init(void)
+{
+#ifdef USE_INA226
+    memset(&currentMeterINA226State, 0, sizeof(currentMeterINA226State_t));
+
+    ina226Init();
+
+    pt1FilterInit(&ina226IBatFilter, pt1FilterGain(GET_BATTERY_LPF_FREQUENCY(batteryConfig()->ibatLpfPeriod), HZ_TO_INTERVAL(50)));
+#endif
+}
+
+void currentMeterINA226Refresh(int32_t lastUpdateAt)
+{
+#ifdef USE_INA226
+    // A failed transfer leaves the cached reading in place; a device that never
+    // answered leaves it at zero, which reads as no current flowing.
+    ina226Update();
+
+    const int32_t shuntMicrovolts = ina226GetData()->shuntVoltageMicrovolts;
+
+    currentMeterINA226State.amperageLatest = currentMeterINA226Convert(shuntMicrovolts);
+    currentMeterINA226State.amperage = currentMeterINA226Convert(pt1FilterApply(&ina226IBatFilter, shuntMicrovolts));
+
+    updateCurrentmAhDrawnState(&currentMeterINA226State.mahDrawnState, currentMeterINA226State.amperageLatest, lastUpdateAt);
+#else
+    UNUSED(lastUpdateAt);
+#endif
+}
+
+void currentMeterINA226Read(currentMeter_t *meter)
+{
+#ifdef USE_INA226
+    meter->amperageLatest = currentMeterINA226State.amperageLatest;
+    meter->amperage = currentMeterINA226State.amperage;
+    meter->mAhDrawn = currentMeterINA226State.mahDrawnState.mAhDrawn;
+
+    DEBUG_SET(DEBUG_CURRENT_SENSOR, 2, meter->amperageLatest);
+    DEBUG_SET(DEBUG_CURRENT_SENSOR, 3, meter->mAhDrawn);
+#else
+    currentMeterReset(meter);
+#endif
 }
 
 //
@@ -299,7 +371,16 @@ void currentMeterMSPRead(currentMeter_t *meter)
 void currentMeterRead(currentMeterId_e id, currentMeter_t *meter)
 {
     if (id == CURRENT_METER_ID_BATTERY_1) {
-        currentMeterADCRead(meter);
+#ifdef USE_INA226
+        // The INA226 replaces the ADC as the source for the same meter id, so
+        // that MSP consumers see the pack current without any protocol change.
+        if (batteryConfig()->currentMeterSource == CURRENT_METER_INA226) {
+            currentMeterINA226Read(meter);
+        } else
+#endif
+        {
+            currentMeterADCRead(meter);
+        }
     }
 #ifdef USE_VIRTUAL_CURRENT_METER
     else if (id == CURRENT_METER_ID_VIRTUAL_1) {

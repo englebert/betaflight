@@ -84,6 +84,7 @@
 
 #include "pg/adc.h"
 #include "pg/alt_hold.h"
+#include "pg/baro_land.h"
 #include "pg/autopilot.h"
 #include "pg/beeper.h"
 #include "pg/beeper_dev.h"
@@ -96,6 +97,7 @@
 #include "pg/flash.h"
 #include "pg/gimbal.h"
 #include "pg/gyrodev.h"
+#include "pg/ina226.h"
 #include "pg/max7456.h"
 #include "pg/mco.h"
 #include "pg/motor.h"
@@ -606,6 +608,14 @@ const identifierLookupEntry_t identifierLookups[IDENTIFIER_LOOKUP_COUNT] = {
     [IDENTIFIER_LOOKUP_SERIAL_PORT] = { serialIdentifierName, serialIdentifierFromName, serialIdentifierNameAt },
 };
 
+#ifdef USE_INA226
+// Sample counts the INA226 can average over, indexed by the AVG field of its
+// configuration register.
+static const char * const lookupTableIna226Averaging[] = {
+    "1", "4", "16", "64", "128", "256", "512", "1024"
+};
+#endif
+
 const lookupTableEntry_t lookupTables[] = {
     LOOKUP_TABLE_ENTRY(lookupTableOffOn),
     LOOKUP_TABLE_ENTRY(lookupTableUnit),
@@ -632,6 +642,9 @@ const lookupTableEntry_t lookupTables[] = {
 #endif
     LOOKUP_TABLE_ENTRY(currentMeterSourceNames),
     LOOKUP_TABLE_ENTRY(voltageMeterSourceNames),
+#ifdef USE_INA226
+    LOOKUP_TABLE_ENTRY(lookupTableIna226Averaging),
+#endif
 #ifdef USE_SERVOS
     LOOKUP_TABLE_ENTRY(lookupTableGimbalMode),
 #endif
@@ -1071,6 +1084,17 @@ const clivalue_t valueTable[] = {
 // PG_CURRENT_SENSOR_ADC_CONFIG
     { "ibata_scale",                VAR_INT16  | HARDWARE_VALUE, .config.minmax = { -16000, 16000 }, PG_CURRENT_SENSOR_ADC_CONFIG, offsetof(currentSensorADCConfig_t, scale) },
     { "ibata_offset",               VAR_INT16  | MASTER_VALUE, .config.minmax = { -32000, 32000 }, PG_CURRENT_SENSOR_ADC_CONFIG, offsetof(currentSensorADCConfig_t, offset) },
+
+#ifdef USE_INA226
+// PG_INA226_CONFIG
+    { "ina226_i2c_device",          VAR_UINT8  | HARDWARE_VALUE, .config.minmaxUnsigned = { 0, I2CDEV_COUNT }, PG_INA226_CONFIG, offsetof(ina226Config_t, device) },
+    { "ina226_i2c_address",         VAR_UINT8  | HARDWARE_VALUE, .config.minmaxUnsigned = { 0, I2C_ADDR7_MAX }, PG_INA226_CONFIG, offsetof(ina226Config_t, address) },
+    { "ina226_shunt_resistance",    VAR_UINT16 | HARDWARE_VALUE, .config.minmaxUnsigned = { INA226_SHUNT_MICROOHMS_MIN, INA226_SHUNT_MICROOHMS_MAX }, PG_INA226_CONFIG, offsetof(ina226Config_t, shuntMicroOhms) },
+    { "ina226_vbat_scale",          VAR_UINT16 | HARDWARE_VALUE, .config.minmaxUnsigned = { INA226_VBAT_SCALE_MIN, INA226_VBAT_SCALE_MAX }, PG_INA226_CONFIG, offsetof(ina226Config_t, vbatScale) },
+    { "ina226_current_offset",      VAR_INT16  | MASTER_VALUE, .config.minmax = { -32000, 32000 }, PG_INA226_CONFIG, offsetof(ina226Config_t, currentOffset) },
+    { "ina226_averaging",           VAR_UINT8  | HARDWARE_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_INA226_AVERAGING }, PG_INA226_CONFIG, offsetof(ina226Config_t, averaging) },
+    { "ina226_current_invert",      VAR_UINT8  | HARDWARE_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_INA226_CONFIG, offsetof(ina226Config_t, currentInvert) },
+#endif
 // PG_CURRENT_SENSOR_ADC_CONFIG
 #ifdef USE_VIRTUAL_CURRENT_METER
     { "ibatv_scale",                VAR_INT16  | MASTER_VALUE, .config.minmax = { -16000, 16000 }, PG_CURRENT_SENSOR_VIRTUAL_CONFIG, offsetof(currentSensorVirtualConfig_t, scale) },
@@ -1225,6 +1249,12 @@ const clivalue_t valueTable[] = {
     { PARAM_NAME_ALT_HOLD_DEADBAND,    VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 70 },  PG_ALTHOLD_CONFIG, offsetof(altHoldConfig_t, deadband) },
 #endif // !USE_WING
 #endif // USE_ALTITUDE_HOLD
+
+#ifdef USE_BARO_LAND
+    { PARAM_NAME_BARO_LAND_TIMEOUT,             VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 250 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, timeout) },
+    { PARAM_NAME_BARO_LAND_TOUCHDOWN_TIME,      VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 50 },  PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, touchdownTime) },
+    { PARAM_NAME_BARO_LAND_TOUCHDOWN_VELOCITY,  VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 200 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, touchdownVelocity) },
+#endif // USE_BARO_LAND
 
 #ifdef USE_POSITION_HOLD
 #ifndef USE_WING

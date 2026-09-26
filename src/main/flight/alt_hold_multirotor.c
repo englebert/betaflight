@@ -31,6 +31,7 @@
 #include "fc/runtime_config.h"
 
 #include "flight/autopilot.h"
+#include "flight/baro_land.h"
 #include "flight/failsafe.h"
 #include "flight/flight_plan_nav.h"
 #include "flight/position.h"
@@ -133,7 +134,9 @@ static void altHoldUpdateTargetAltitude(timeUs_t taskIntervalUs)
             
     // if failsafe is active, and we get here, we are in failsafe landing mode, it controls throttle.
     // a switch-invoked rescue that cannot stage or has aborted drives the same descent.
-    if (failsafeIsActive() || flightPlanNavIsRescueDescentActive()) {
+    // BAROLAND is the pilot asking for that same descent deliberately; the throttle
+    // stick is ignored throughout, so the stickFactor computed above is discarded.
+    if (failsafeIsActive() || baroLandIsActive() || flightPlanNavIsRescueDescentActive()) {
         // descend at up to 10 times faster when high
         // default landing timeout is now 60s; must to get the quad down within this limit
         // need a rapid descent when initiated high, and must slow down closer to ground

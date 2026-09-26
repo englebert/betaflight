@@ -29,6 +29,7 @@ typedef enum {
     CURRENT_METER_VIRTUAL,
     CURRENT_METER_ESC,
     CURRENT_METER_MSP,
+    CURRENT_METER_INA226,
     CURRENT_METER_COUNT
 } currentMeterSource_e;
 
@@ -58,7 +59,8 @@ typedef enum {
     CURRENT_SENSOR_VIRTUAL = 0,
     CURRENT_SENSOR_ADC,
     CURRENT_SENSOR_ESC,
-    CURRENT_SENSOR_MSP
+    CURRENT_SENSOR_MSP,
+    CURRENT_SENSOR_INA226
 } currentSensor_e;
 
 //
@@ -77,6 +79,16 @@ typedef struct currentSensorADCConfig_s {
 } currentSensorADCConfig_t;
 
 PG_DECLARE(currentSensorADCConfig_t, currentSensorADCConfig);
+
+//
+// INA226
+//
+
+typedef struct currentMeterINA226State_s {
+    currentMeterMAhDrawnState_t mahDrawnState;
+    int32_t amperage;           // current read by current sensor in centiampere (1/100th A)
+    int32_t amperageLatest;     // current read by current sensor in centiampere (1/100th A) (unfiltered)
+} currentMeterINA226State_t;
 
 //
 // Virtual
@@ -121,6 +133,14 @@ void currentMeterReset(currentMeter_t *meter);
 void currentMeterADCInit(void);
 void currentMeterADCRefresh(int32_t lastUpdateAt);
 void currentMeterADCRead(currentMeter_t *meter);
+
+void currentMeterINA226Init(void);
+// Shunt voltage in uV to centiamps, applying ina226_shunt_resistance,
+// ina226_current_invert and ina226_current_offset. Exposed so the CLI
+// diagnostic reports exactly what the meter would.
+int32_t currentMeterINA226Convert(int32_t shuntMicrovolts);
+void currentMeterINA226Refresh(int32_t lastUpdateAt);
+void currentMeterINA226Read(currentMeter_t *meter);
 
 void currentMeterVirtualInit(void);
 void currentMeterVirtualRefresh(int32_t lastUpdateAt, bool armed, bool throttleLowAndMotorStop, int32_t throttleOffset);

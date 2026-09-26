@@ -64,6 +64,7 @@ bool cliMode = false;
 #include "drivers/adc.h"
 #include "drivers/buf_writer.h"
 #include "drivers/bus_i2c.h"
+#include "drivers/ina226.h"
 #include "drivers/bus_spi.h"
 #include "drivers/dma.h"
 #include "drivers/dma_reqmap.h"
@@ -145,6 +146,7 @@ bool cliMode = false;
 #include "pg/dronecan.h"
 #include "pg/flight_plan.h"
 #include "pg/gyrodev.h"
+#include "pg/ina226.h"
 #include "pg/max7456.h"
 #include "pg/mco.h"
 #include "pg/motor.h"
@@ -6083,6 +6085,220 @@ static const char * const nodeHealthNames[] = { "OK", "WARNING", "ERROR", "CRITI
 static const char * const nodeModeNames[] = { "OPERATIONAL", "INITIALISING", "MAINTENANCE", "UPDATING", "?", "?", "?", "OFFLINE" };
 #endif
 
+#ifdef USE_INA226
+// Print a signed value held in hundredths, e.g. centivolts or centiamps.
+static void cliPrintHundredths(int32_t hundredths)
+{
+    const bool negative = hundredths < 0;
+    const int32_t magnitude = negative ? -hundredths : hundredths;
+
+    cliPrintf("%s%d.%02d", negative ? "-" : "", (int)(magnitude / 100), (int)(magnitude % 100));
+}
+
+static void cliIna226PrintScaled(const char *label, int32_t hundredths, const char *unit)
+{
+    cliPrintf("%s: ", label);
+    cliPrintHundredths(hundredths);
+    cliPrintLinef(" %s", unit);
+}
+
+static void cliIna226ScanBus(uint8_t device)
+{
+    unsigned answered = 0;
+    unsigned found = 0;
+
+    cliPrintLinef("scanning i2c bus %d, addresses 0x%02x-0x%02x", device, INA226_ADDRESS_MIN, INA226_ADDRESS_MAX);
+
+    for (uint8_t address = INA226_ADDRESS_MIN; address <= INA226_ADDRESS_MAX; address++) {
+        uint16_t manufacturerId = 0;
+        uint16_t configuration = 0;
+
+        switch (ina226Probe(device, address, &manufacturerId, &configuration)) {
+        case INA226_PROBE_FOUND:
+            found++;
+            answered++;
+            cliPrintLinef("  0x%02x (%d): INA226, config 0x%04x", address, address, configuration);
+            break;
+        case INA226_PROBE_FOREIGN:
+            answered++;
+            cliPrintLinef("  0x%02x (%d): answered with manufacturer 0x%04x config 0x%04x, not an INA226",
+                address, address, manufacturerId, configuration);
+            break;
+        default:
+            break;
+        }
+        cliWriterFlush();
+    }
+
+    cliPrintLinef("  %u address(es) answered, %u INA226", answered, found);
+}
+
+// `ina226` reports the configured bus, probes it now, and shows the live
+// reading scaled the way the battery meters scale it. `ina226 scan` walks the
+// whole 0x40-0x4F address range instead, for when the strapping is unknown.
+RAM_CODE static void cliIna226(const char *cmdName, char *cmdline)
+{
+    const ina226Config_t *config = ina226Config();
+    const char *args = skipSpace(cmdline);
+
+    if (strcasecmp(args, "scan") == 0) {
+        if (config->device) {
+            cliIna226ScanBus(config->device);
+        } else {
+            // No bus configured, so there is nothing to prefer: try them all.
+            for (uint8_t device = 1; device <= I2CDEV_COUNT; device++) {
+                cliIna226ScanBus(device);
+            }
+        }
+        return;
+    }
+
+    if (*args) {
+        cliShowParseError(cmdName);
+        return;
+    }
+
+    if (!config->device) {
+        cliPrintLine("bus: none - set ina226_i2c_device to an i2c bus first");
+        return;
+    }
+
+    cliPrintLinef("bus: i2c bus %d, address 0x%02x (%d)", config->device, config->address, config->address);
+
+    uint16_t manufacturerId = 0;
+    uint16_t configuration = 0;
+
+    switch (ina226Probe(config->device, config->address, &manufacturerId, &configuration)) {
+    case INA226_PROBE_FOUND:
+        cliPrintLinef("probe: INA226 present, manufacturer 0x%04x config 0x%04x", manufacturerId, configuration);
+        break;
+    case INA226_PROBE_FOREIGN:
+        cliPrintLinef("probe: something answered with manufacturer 0x%04x config 0x%04x, not an INA226",
+            manufacturerId, configuration);
+        break;
+    default:
+        cliPrintLine("probe: no answer - check wiring and address, then try 'ina226 scan'");
+        break;
+    }
+
+    // Detection only happens once, at boot, so a device found by the probe but
+    // missing here means the firmware is not using it until the next power up.
+    cliPrintLinef("in use: %s", ina226IsDetected() ? "yes" : "no - not detected at boot, power cycle after fixing");
+
+    if (ina226IsDetected()) {
+        const ina226Data_t *data = ina226GetData();
+
+        cliPrintLinef("raw: shunt %d uV, bus %u mV",
+            (int)data->shuntVoltageMicrovolts, (unsigned)data->busVoltageMillivolts);
+        cliIna226PrintScaled("voltage", voltageMeterINA226Convert(data->busVoltageMillivolts), "V");
+        cliIna226PrintScaled("current", currentMeterINA226Convert(data->shuntVoltageMicrovolts), "A");
+    }
+
+    cliPrintLinef("config: shunt %u uOhm, vbat scale %u, current offset %d, averaging %u, invert %s",
+        config->shuntMicroOhms, config->vbatScale, config->currentOffset,
+        config->averaging, config->currentInvert ? "ON" : "OFF");
+}
+#endif // USE_INA226
+
+#if defined(USE_I2C) && !defined(USE_SOFT_I2C)
+// Addresses that a Betaflight build is likely to meet, to save reaching for a
+// datasheet. Several parts share an address, so this only ever narrows it down.
+static const char *i2cAddressHint(uint8_t address)
+{
+    switch (address) {
+    case 0x0c: case 0x0e: case 0x0f:
+        return " AK8963/AK8975 magnetometer";
+    case 0x0d:
+        return " QMC5883L magnetometer";
+    case 0x1e:
+        return " HMC5883L or LIS3MDL magnetometer";
+    case 0x2c:
+        return " QMC5883P magnetometer";
+    case 0x30:
+        return " LIS2MDL magnetometer";
+    case 0x38: case 0x39:
+        return " VL53L0X/VL53L1X rangefinder";
+    case 0x40: case 0x41: case 0x42: case 0x43:
+    case 0x44: case 0x45: case 0x46: case 0x47:
+    case 0x48: case 0x49: case 0x4a: case 0x4b:
+    case 0x4c: case 0x4d: case 0x4e: case 0x4f:
+        return " INA226/INA219 current monitor";
+    case 0x50: case 0x51: case 0x52: case 0x53:
+    case 0x54: case 0x55: case 0x56: case 0x57:
+        return " EEPROM";
+    case 0x68: case 0x69:
+        return " MPU/ICM accelerometer-gyro, or DS3231 RTC";
+    case 0x70:
+        return " TCA9548 i2c multiplexer";
+    case 0x76: case 0x77:
+        return " BMP280/BMP388/DPS310/MS5611/SPL06 barometer";
+    default:
+        return "";
+    }
+}
+
+static void cliI2cScanBus(uint8_t device)
+{
+    const i2cDevice_e i2cDevice = I2C_CFG_TO_DEV(device);
+    const i2cConfig_t *config = i2cConfig(i2cDevice);
+
+    if (!config->ioTagScl || !config->ioTagSda) {
+        cliPrintLinef("bus %d: no pins assigned", device);
+        return;
+    }
+
+    cliPrintLinef("bus %d: scl %c%02d, sda %c%02d, %d kHz", device,
+        IO_GPIOPortIdxByTag(config->ioTagScl) + 'A', IO_GPIOPinIdxByTag(config->ioTagScl),
+        IO_GPIOPortIdxByTag(config->ioTagSda) + 'A', IO_GPIOPinIdxByTag(config->ioTagSda),
+        config->clockSpeed);
+
+    unsigned found = 0;
+
+    for (uint8_t address = I2C_ADDR7_MIN; address <= I2C_ADDR7_MAX; address++) {
+        uint8_t discard;
+        bool answered = false;
+
+        // Register 0xFF asks the driver for a plain read with no register
+        // address, the least intrusive way to see whether an address responds.
+        // A second attempt covers the case where a sensor task held the bus for
+        // the first, which would otherwise read as an empty address.
+        for (int attempt = 0; attempt < 2 && !answered; attempt++) {
+            answered = i2cRead(i2cDevice, address, 0xFF, sizeof(discard), &discard);
+        }
+
+        if (answered) {
+            found++;
+            cliPrintLinef("  0x%02x (%d)%s", address, address, i2cAddressHint(address));
+        }
+        cliWriterFlush();
+    }
+
+    cliPrintLinef("  %u device(s)", found);
+}
+
+// `i2c` scans every configured bus, `i2c <bus>` just the one. The bus number is
+// the same numbering used by settings such as ina226_i2c_device.
+RAM_CODE static void cliI2c(const char *cmdName, char *cmdline)
+{
+    const char *args = skipSpace(cmdline);
+
+    if (*args) {
+        char *end;
+        const unsigned device = strtoul(args, &end, 10);
+        if (*end || device < 1 || device > I2CDEV_COUNT) {
+            cliPrintErrorLinef(cmdName, "bus must be 1 to %d", I2CDEV_COUNT);
+            return;
+        }
+        cliI2cScanBus(device);
+        return;
+    }
+
+    for (uint8_t device = 1; device <= I2CDEV_COUNT; device++) {
+        cliI2cScanBus(device);
+    }
+}
+#endif // USE_I2C && !USE_SOFT_I2C
+
 RAM_CODE static void cliStatus(const char *cmdName, char *cmdline)
 {
     UNUSED(cmdName);
@@ -6205,6 +6421,27 @@ RAM_CODE static void cliStatus(const char *cmdName, char *cmdline)
         }
     }
 #endif /* USE_SENSOR_NAMES */
+
+#ifdef USE_INA226
+    cliPrint("INA226: ");
+    if (!ina226Config()->device) {
+        cliPrint("NOT CONFIGURED");
+    } else {
+        cliPrintf("i2c bus %d 0x%02x, ", ina226Config()->device, ina226Config()->address);
+        if (ina226IsDetected()) {
+            const ina226Data_t *ina226 = ina226GetData();
+
+            cliPrint("detected, ");
+            cliPrintHundredths(voltageMeterINA226Convert(ina226->busVoltageMillivolts));
+            cliPrint("V ");
+            cliPrintHundredths(currentMeterINA226Convert(ina226->shuntVoltageMicrovolts));
+            cliPrint("A");
+        } else {
+            cliPrint("NOT DETECTED");
+        }
+    }
+    cliPrintLinefeed();
+#endif // USE_INA226
 
 #ifdef USE_GPS
     cliPrint("GPS: ");
@@ -8643,6 +8880,14 @@ const clicmd_t cmdTable[] = {
     CLI_COMMAND_DEF("gyroregisters", "dump gyro config registers contents", NULL, cliDumpGyroRegisters),
 #endif
     CLI_COMMAND_DEF("help", "display command help", "[search string]", cliHelp),
+#if defined(USE_I2C) && !defined(USE_SOFT_I2C)
+    CLI_COMMAND_DEF("i2c", "scan i2c buses for devices", "[<bus>]", cliI2c),
+#endif
+#ifdef USE_INA226
+    CLI_COMMAND_DEF("ina226", "probe the INA226 current/voltage monitor",
+        "\r\n\t<>\r\n\t\tshow the configured bus, probe it and print the live reading"
+        "\r\n\tscan\r\n\t\tscan 0x40-0x4f for an INA226", cliIna226),
+#endif
 #if ENABLE_LCD_CONSOLE
     CLI_COMMAND_DEF("lcd", "show LCD console grid contents (debug aid)", NULL, cliLcd),
 #endif

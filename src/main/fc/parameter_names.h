@@ -320,6 +320,12 @@
 #define PARAM_NAME_POS_HOLD_DEADBAND "pos_hold_deadband"
 #endif
 
+#ifdef USE_BARO_LAND
+#define PARAM_NAME_BARO_LAND_TIMEOUT "baroland_timeout"
+#define PARAM_NAME_BARO_LAND_TOUCHDOWN_TIME "baroland_touchdown_time"
+#define PARAM_NAME_BARO_LAND_TOUCHDOWN_VELOCITY "baroland_touchdown_velocity"
+#endif
+
 #define PARAM_NAME_IMU_DCM_KP "imu_dcm_kp"
 #define PARAM_NAME_IMU_DCM_KI "imu_dcm_ki"
 #define PARAM_NAME_IMU_SMALL_ANGLE "small_angle"

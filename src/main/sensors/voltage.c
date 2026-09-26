@@ -35,10 +35,12 @@
 #include "config/config_reset.h"
 
 #include "drivers/adc.h"
+#include "drivers/ina226.h"
 
 #include "flight/mixer.h"
 #include "flight/pid.h"
 
+#include "pg/ina226.h"
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
 
@@ -49,7 +51,7 @@
 #include "voltage.h"
 
 const char * const voltageMeterSourceNames[VOLTAGE_METER_COUNT] = {
-    "NONE", "ADC", "ESC"
+    "NONE", "ADC", "ESC", "INA226"
 };
 
 const uint8_t voltageMeterIds[] = {
@@ -247,6 +249,82 @@ void voltageMeterGenericInit(void)
 }
 
 //
+// INA226
+//
+
+#ifdef USE_INA226
+typedef struct voltageMeterINA226State_s {
+    uint16_t voltageDisplayFiltered;  // battery voltage in 0.01V steps (filtered)
+    uint16_t voltageUnfiltered;       // battery voltage in 0.01V steps (unfiltered)
+    pt1Filter_t displayFilter;
+#if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
+    uint16_t voltageSagFiltered;      // battery voltage in 0.01V steps (filtered for vbat sag compensation)
+    pt1Filter_t sagFilter;            // filter for vbat sag compensation
+#endif
+} voltageMeterINA226State_t;
+
+static voltageMeterINA226State_t voltageMeterINA226State;
+
+// The INA226 measures the pack directly, so its bus voltage needs no divider,
+// only a trim for the drop between the sense point and the pack.
+uint16_t voltageMeterINA226Convert(uint32_t millivolts)
+{
+    return (millivolts * ina226Config()->vbatScale) / 10000;
+}
+#endif
+
+void voltageMeterINA226Init(void)
+{
+#ifdef USE_INA226
+    memset(&voltageMeterINA226State, 0, sizeof(voltageMeterINA226State_t));
+
+    ina226Init();
+
+    pt1FilterInit(&voltageMeterINA226State.displayFilter, pt1FilterGain(GET_BATTERY_LPF_FREQUENCY(batteryConfig()->vbatDisplayLpfPeriod), HZ_TO_INTERVAL(isSagCompensationConfigured() ? FAST_VOLTAGE_TASK_FREQ_HZ : SLOW_VOLTAGE_TASK_FREQ_HZ)));
+#if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
+    if (isSagCompensationConfigured()) {
+        pt1FilterInit(&voltageMeterINA226State.sagFilter, pt1FilterGain(GET_BATTERY_LPF_FREQUENCY(batteryConfig()->vbatSagLpfPeriod), HZ_TO_INTERVAL(FAST_VOLTAGE_TASK_FREQ_HZ)));
+    }
+#endif
+#endif
+}
+
+void voltageMeterINA226Refresh(void)
+{
+#ifdef USE_INA226
+    voltageMeterINA226State_t *state = &voltageMeterINA226State;
+
+    // A failed transfer leaves the cached reading in place; a device that never
+    // answered leaves it at zero, which reads as no battery connected.
+    ina226Update();
+
+    const uint32_t millivolts = ina226GetData()->busVoltageMillivolts;
+
+    state->voltageUnfiltered = voltageMeterINA226Convert(millivolts);
+    state->voltageDisplayFiltered = pt1FilterApply(&state->displayFilter, state->voltageUnfiltered);
+
+#if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
+    if (isSagCompensationConfigured()) {
+        state->voltageSagFiltered = pt1FilterApply(&state->sagFilter, state->voltageUnfiltered);
+    }
+#endif
+#endif
+}
+
+void voltageMeterINA226Read(voltageMeter_t *voltageMeter)
+{
+#ifdef USE_INA226
+    voltageMeter->displayFiltered = voltageMeterINA226State.voltageDisplayFiltered;
+    voltageMeter->unfiltered = voltageMeterINA226State.voltageUnfiltered;
+#if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
+    voltageMeter->sagFiltered = voltageMeterINA226State.voltageSagFiltered;
+#endif
+#else
+    voltageMeterReset(voltageMeter);
+#endif
+}
+
+//
 // ESC
 //
 
@@ -329,7 +407,16 @@ const uint8_t voltageMeterADCtoIDMap[MAX_VOLTAGE_SENSOR_ADC] = {
 void voltageMeterRead(voltageMeterId_e id, voltageMeter_t *meter)
 {
     if (id == VOLTAGE_METER_ID_BATTERY_1) {
-        voltageMeterADCRead(VOLTAGE_SENSOR_ADC_VBAT, meter);
+#ifdef USE_INA226
+        // The INA226 replaces the ADC as the source for the same meter id, so
+        // that MSP consumers see the pack voltage without any protocol change.
+        if (batteryConfig()->voltageMeterSource == VOLTAGE_METER_INA226) {
+            voltageMeterINA226Read(meter);
+        } else
+#endif
+        {
+            voltageMeterADCRead(VOLTAGE_SENSOR_ADC_VBAT, meter);
+        }
     } else
 #ifdef ADC_POWER_12V
     if (id == VOLTAGE_METER_ID_12V_1) {

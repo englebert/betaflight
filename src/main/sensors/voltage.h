@@ -40,6 +40,7 @@ typedef enum {
     VOLTAGE_METER_NONE = 0,
     VOLTAGE_METER_ADC,
     VOLTAGE_METER_ESC,
+    VOLTAGE_METER_INA226,
     VOLTAGE_METER_COUNT
 } voltageMeterSource_e;
 
@@ -65,7 +66,8 @@ typedef struct voltageMeter_s {
 
 typedef enum {
     VOLTAGE_SENSOR_TYPE_ADC_RESISTOR_DIVIDER = 0,
-    VOLTAGE_SENSOR_TYPE_ESC
+    VOLTAGE_SENSOR_TYPE_ESC,
+    VOLTAGE_SENSOR_TYPE_INA226
 } voltageSensorType_e;
 
 //
@@ -112,6 +114,13 @@ void voltageMeterGenericInit(void);
 void voltageMeterADCInit(void);
 void voltageMeterADCRefresh(void);
 void voltageMeterADCRead(voltageSensorADC_e adcChannel, voltageMeter_t *voltageMeter);
+
+void voltageMeterINA226Init(void);
+// Bus voltage in mV to 0.01V steps, applying ina226_vbat_scale. Exposed so the
+// CLI diagnostic reports exactly what the meter would.
+uint16_t voltageMeterINA226Convert(uint32_t millivolts);
+void voltageMeterINA226Refresh(void);
+void voltageMeterINA226Read(voltageMeter_t *voltageMeter);
 
 void voltageMeterESCInit(void);
 void voltageMeterESCRefresh(void);

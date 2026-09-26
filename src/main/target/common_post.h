@@ -936,6 +936,13 @@ extern struct linker_symbol __fontdata_end;
 #error "USE_POSITION_HOLD requires USE_GPS and/or USE_OPTICALFLOW to be defined"
 #endif
 
+// BAROLAND flies its descent through the alt-hold controller and is multirotor
+// only, matching alt hold's own gating. Drop it rather than fail to build when a
+// config asks for it without those, so the opt-in is safe to leave in place.
+#if defined(USE_BARO_LAND) && (!defined(USE_ALTITUDE_HOLD) || defined(USE_WING))
+#undef USE_BARO_LAND
+#endif
+
 #if !defined(ENABLE_TELEMETRY_MAVLINK_MISSION)
 // flight_plan_nav.c (and the autopilot hook in fc/core.c) are gated on
 // !defined(USE_WING); the mission module reaches into those symbols, so match
@@ -1033,6 +1040,12 @@ extern struct linker_symbol __fontdata_end;
 #endif
 #if !defined(ENABLE_LCD_PRINTF_REDIRECT)
 #define ENABLE_LCD_PRINTF_REDIRECT ENABLE_LCD_CONSOLE
+#endif
+
+// The INA226 current/voltage monitor is an I2C part, so drop it on a build
+// with no I2C rather than failing to link.
+#if defined(USE_INA226) && !defined(USE_I2C)
+#undef USE_INA226
 #endif
 
 // Bench debug CLI primitives `dxr` (read) and `dxw` (write) for poking

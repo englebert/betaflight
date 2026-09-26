@@ -1184,6 +1184,10 @@ static void osdElementFlymode(osdElementParms_t *element)
         strcpy(element->buff, "HEAD");
     } else if (FLIGHT_MODE(PASSTHRU_MODE)) {
         strcpy(element->buff, "PASS");
+#ifdef USE_BARO_LAND
+    } else if (FLIGHT_MODE(BARO_LAND_MODE)) {
+        strcpy(element->buff, "LAND");
+#endif
     } else if (FLIGHT_MODE(POS_HOLD_MODE)) {
         strcpy(element->buff, "POSH");
     } else if (FLIGHT_MODE(ALT_HOLD_MODE)) {

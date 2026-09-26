@@ -166,6 +166,13 @@ void batteryUpdateVoltage(timeUs_t currentTimeUs)
             voltageMeterADCRead(VOLTAGE_SENSOR_ADC_VBAT, &voltageMeter);
             break;
 
+#ifdef USE_INA226
+        case VOLTAGE_METER_INA226:
+            voltageMeterINA226Refresh();
+            voltageMeterINA226Read(&voltageMeter);
+            break;
+#endif
+
         default:
         case VOLTAGE_METER_NONE:
             voltageMeterReset(&voltageMeter);
@@ -472,6 +479,12 @@ void batteryInit(void)
             voltageMeterADCInit();
             break;
 
+#ifdef USE_INA226
+        case VOLTAGE_METER_INA226:
+            voltageMeterINA226Init();
+            break;
+#endif
+
         default:
             break;
     }
@@ -485,6 +498,12 @@ void batteryInit(void)
         case CURRENT_METER_ADC:
             currentMeterADCInit();
             break;
+
+#ifdef USE_INA226
+        case CURRENT_METER_INA226:
+            currentMeterINA226Init();
+            break;
+#endif
 
         case CURRENT_METER_VIRTUAL:
 #ifdef USE_VIRTUAL_CURRENT_METER
@@ -524,6 +543,13 @@ void batteryUpdateCurrentMeter(timeUs_t currentTimeUs)
             currentMeterADCRefresh(lastUpdateAt);
             currentMeterADCRead(&currentMeter);
             break;
+
+#ifdef USE_INA226
+        case CURRENT_METER_INA226:
+            currentMeterINA226Refresh(lastUpdateAt);
+            currentMeterINA226Read(&currentMeter);
+            break;
+#endif
 
         case CURRENT_METER_VIRTUAL: {
 #ifdef USE_VIRTUAL_CURRENT_METER

@@ -244,11 +244,20 @@
 
 #define USE_SERVOS
 
+// EXCLUDE_VTX opts a board config out of the whole VTX stack (SmartAudio,
+// Tramp, MSP VTX, the VTX table and VTX control), as for EXCLUDE_OSD below.
+#if !defined(EXCLUDE_VTX)
 #define USE_VTX
+#endif
+// A board config can opt out of the OSD (and with it CMS, the MAX7456 driver
+// and the MSP displayport) by defining EXCLUDE_OSD; config.h is included ahead
+// of this header, so the opt-out is visible here.
+#if !defined(EXCLUDE_OSD)
 #define USE_OSD
 #if !defined(USE_OSD_SD) && !defined(USE_OSD_HD)
 #define USE_OSD_SD
 #define USE_OSD_HD
+#endif
 #endif
 #define USE_BLACKBOX
 
@@ -300,7 +309,8 @@
 #define USE_GPS_PLUS_CODES
 #endif
 
-#if !defined(USE_LED_STRIP)
+// EXCLUDE_LED_STRIP opts a board config out, as for EXCLUDE_OSD above.
+#if !defined(USE_LED_STRIP) && !defined(EXCLUDE_LED_STRIP)
 #define USE_LED_STRIP
 #endif
 

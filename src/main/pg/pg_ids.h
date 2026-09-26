@@ -167,6 +167,8 @@
 #define PG_DRONECAN_DNA_CONFIG      567
 #define PG_OSD_NAV_MAP_CONFIG       568
 #define PG_PITOT_CONFIG             569
+#define PG_INA226_CONFIG            570
+#define PG_BARO_LAND_CONFIG         571
 
 // TODO TBC
 #define PG_DISPLAY_PORT_FBOSD_CONFIG 566

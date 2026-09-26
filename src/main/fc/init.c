@@ -97,6 +97,7 @@
 
 #include "flight/alt_hold.h"
 #include "flight/autopilot.h"
+#include "flight/baro_land.h"
 #include "flight/failsafe.h"
 #if ENABLE_FLIGHT_PLAN && !defined(USE_WING)
 #include "flight/flight_plan_nav.h"
@@ -1066,6 +1067,10 @@ void initPhase3(void)
 
 #ifdef USE_POSITION_HOLD
     posHoldInit();
+#endif
+
+#ifdef USE_BARO_LAND
+    baroLandInit();
 #endif
 
 #ifdef USE_GPS_RESCUE

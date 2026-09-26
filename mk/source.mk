@@ -3,6 +3,7 @@ PG_SRC = \
             pg/alt_hold_multirotor.c \
             pg/alt_hold_wing.c \
             pg/autopilot.c \
+            pg/baro_land.c \
             pg/beeper.c \
             pg/beeper_dev.c \
             pg/board.c \
@@ -23,6 +24,7 @@ PG_SRC = \
             pg/gps_rescue_multirotor.c \
             pg/gps_rescue_wing.c \
             pg/gyrodev.c \
+            pg/ina226.c \
             pg/max7456.c \
             pg/mco.c \
             pg/motor.c \
@@ -147,6 +149,7 @@ COMMON_SRC = \
             msp/msp_build_info.c \
             msp/msp_serial.c \
             scheduler/scheduler.c \
+            drivers/ina226.c \
             sensors/adcinternal.c \
             sensors/battery.c \
             sensors/current.c \
@@ -168,6 +171,7 @@ COMMON_SRC = \
             flight/alt_hold_wing.c \
             flight/autopilot_multirotor.c \
             flight/autopilot_wing.c \
+            flight/baro_land.c \
             flight/dyn_notch_filter.c \
             flight/failsafe.c \
             flight/flight_plan_capture.c \

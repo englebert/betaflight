@@ -59,6 +59,7 @@
 #include "fc/runtime_config.h"
 #include "fc/stats.h"
 
+#include "flight/baro_land.h"
 #include "flight/failsafe.h"
 #include "flight/gps_rescue.h"
 #include "flight/alt_hold.h"
@@ -360,7 +361,13 @@ if (crashFlipModeActive) {
             unsetArmingDisabled(ARMING_DISABLED_BOXFAILSAFE);
         }
 
-        if (IS_RC_MODE_ACTIVE(BOXALTHOLD)) {
+        // BAROLAND shares this flag: it is an alt-hold family mode, and it must
+        // not be possible to arm into a landing
+        if (IS_RC_MODE_ACTIVE(BOXALTHOLD)
+#ifdef USE_BARO_LAND
+            || IS_RC_MODE_ACTIVE(BOXBAROLAND)
+#endif
+            ) {
             setArmingDisabled(ARMING_DISABLED_ALTHOLD);
         } else {
             unsetArmingDisabled(ARMING_DISABLED_ALTHOLD);
@@ -1053,6 +1060,9 @@ void processRxModes(timeUs_t currentTimeUs)
 #ifdef USE_POSITION_HOLD
         || FLIGHT_MODE(POS_HOLD_MODE)
 #endif
+#ifdef USE_BARO_LAND
+        || FLIGHT_MODE(BARO_LAND_MODE)
+#endif
         ) && (sensors(SENSOR_ACC))) {
         // bumpless transfer to Level mode
         canUseHorizonMode = false;
@@ -1167,6 +1177,26 @@ void processRxModes(timeUs_t currentTimeUs)
     navTrailUpdate(currentTimeUs);
 #endif
 
+#ifdef USE_BARO_LAND
+    // Decided ahead of the hold modes below, which engage off baroLandIsActive().
+    // Same prerequisites as alt hold, since the descent is flown through it.
+    if (ARMING_FLAG(ARMED)
+        && IS_RC_MODE_ACTIVE(BOXBAROLAND)
+        // failsafe and GPS rescue both outrank a pilot-invoked landing
+        && !failsafeIsActive()
+        && !FLIGHT_MODE(GPS_RESCUE_MODE)
+        && sensors(SENSOR_ACC)
+        && isAltitudeAvailable()
+        && wasThrottleRaised()) {
+        if (!FLIGHT_MODE(BARO_LAND_MODE)) {
+            ENABLE_FLIGHT_MODE(BARO_LAND_MODE);
+        }
+    } else {
+        DISABLE_FLIGHT_MODE(BARO_LAND_MODE);
+    }
+    baroLandUpdate();
+#endif
+
 #ifdef USE_ALTITUDE_HOLD
     // only if armed; can coexist with position hold
     if (ARMING_FLAG(ARMED)
@@ -1174,7 +1204,7 @@ void processRxModes(timeUs_t currentTimeUs)
         && !FLIGHT_MODE(GPS_RESCUE_MODE)
         // and either the alt_hold switch is activated, or are in failsafe landing mode,
         // or an autopilot mission needs altitude control, or a switch-rescue fallback descent
-        && (IS_RC_MODE_ACTIVE(BOXALTHOLD) || failsafeIsActive() || FLIGHT_MODE(AUTOPILOT_MODE) || flightPlanNavIsRescueDescentActive())
+        && (IS_RC_MODE_ACTIVE(BOXALTHOLD) || failsafeIsActive() || baroLandIsActive() || FLIGHT_MODE(AUTOPILOT_MODE) || flightPlanNavIsRescueDescentActive())
         // and we have Acc for self-levelling
         && sensors(SENSOR_ACC)
         // and we have altitude data
@@ -1196,7 +1226,7 @@ void processRxModes(timeUs_t currentTimeUs)
         && !FLIGHT_MODE(GPS_RESCUE_MODE)
         // and either the pos_hold switch is activated, or are in failsafe landing mode,
         // or an autopilot mission needs the position controller
-        && (IS_RC_MODE_ACTIVE(BOXPOSHOLD) || failsafeIsActive() || FLIGHT_MODE(AUTOPILOT_MODE))
+        && (IS_RC_MODE_ACTIVE(BOXPOSHOLD) || failsafeIsActive() || baroLandIsActive() || FLIGHT_MODE(AUTOPILOT_MODE))
         // and we have Acc for self-levelling
         && sensors(SENSOR_ACC)
         // but not until throttle is raised
