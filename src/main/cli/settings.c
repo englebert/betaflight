@@ -1251,6 +1251,9 @@ const clivalue_t valueTable[] = {
 #endif // USE_ALTITUDE_HOLD
 
 #ifdef USE_BARO_LAND
+    { PARAM_NAME_BARO_LAND_DESCENT_RATE,        VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10, 200 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, descentRate) },
+    { PARAM_NAME_BARO_LAND_MAX_DESCENT_RATE,    VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 50, 1000 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, maxDescentRate) },
+    { PARAM_NAME_BARO_LAND_FLARE_ALTITUDE,      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 20, 1000 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, flareAltitude) },
     { PARAM_NAME_BARO_LAND_TIMEOUT,             VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 250 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, timeout) },
     { PARAM_NAME_BARO_LAND_TOUCHDOWN_TIME,      VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 50 },  PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, touchdownTime) },
     { PARAM_NAME_BARO_LAND_TOUCHDOWN_VELOCITY,  VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 200 }, PG_BARO_LAND_CONFIG, offsetof(baroLandConfig_t, touchdownVelocity) },

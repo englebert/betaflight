@@ -24,9 +24,12 @@
 
 #include "baro_land.h"
 
-PG_REGISTER_WITH_RESET_TEMPLATE(baroLandConfig_t, baroLandConfig, PG_BARO_LAND_CONFIG, 0);
+PG_REGISTER_WITH_RESET_TEMPLATE(baroLandConfig_t, baroLandConfig, PG_BARO_LAND_CONFIG, 1);
 
 PG_RESET_TEMPLATE(baroLandConfig_t, baroLandConfig,
+    .flareAltitude = 150,      // 1.5 m
+    .maxDescentRate = 250,     // 2.5 m/s when high
+    .descentRate = 40,         // 0.4 m/s final approach
     .timeout = 60,             // matches the failsafe_landing_time backstop
     .touchdownTime = 10,       // 1.0s of stalled descent at low throttle
     .touchdownVelocity = 50,   // 0.5 m/s

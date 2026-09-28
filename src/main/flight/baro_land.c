@@ -124,6 +124,33 @@ static bool baroLandTouchdownDetected(void)
     return getAutopilotThrottle() < (floorThrottle + hoverThrottle) * 0.5f;
 }
 
+// The descent profile, in absolute cm/s, replacing the failsafe curve alt hold
+// would otherwise fly. Two things make a pilot-invoked landing different from a
+// failsafe one. It has to arrive gently, so the last stretch is flown at a flat,
+// slow descentRate rather than the failsafe profile's untapered 1x climbRate --
+// there is no flare anywhere in the altitude controller, and the altitude target
+// marches below zero regardless, so whatever rate is commanded at the flare
+// height is the rate it touches down at. And the rate must not be tied to
+// alt_hold_climb_rate, which also sets the pilot's throttle-stick authority in
+// ordinary alt hold; one should not have to be crippled to soften the other.
+//
+// Above the flare height the rate ramps linearly with altitude, reaching
+// maxDescentRate ten flare-heights up, so a descent from a real height does not
+// crawl. Altitude here is relative to where the craft armed, not to the ground.
+float baroLandDescentRateCmS(float altitudeCm)
+{
+    const float flareAltCm = (float)baroLandConfig()->flareAltitude;
+    const float descentRate = (float)baroLandConfig()->descentRate;
+    const float maxDescentRate = MAX((float)baroLandConfig()->maxDescentRate, descentRate);
+
+    if (altitudeCm <= flareAltCm) {
+        return descentRate;
+    }
+
+    const float ramp = constrainf((altitudeCm - flareAltCm) / (flareAltCm * 9.0f), 0.0f, 1.0f);
+    return descentRate + ramp * (maxDescentRate - descentRate);
+}
+
 void baroLandUpdate(void)
 {
     const timeMs_t nowMs = millis();

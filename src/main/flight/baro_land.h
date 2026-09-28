@@ -20,6 +20,7 @@
 #include <stdbool.h>
 
 #include "common/time.h"
+#include "common/utils.h"
 
 #include "pg/baro_land.h"
 
@@ -32,6 +33,10 @@ void baroLandInit(void);
 // the RX-rate cadence it runs at does not need to be uniform.
 void baroLandUpdate(void);
 
+// Descent velocity command for the current height, in cm/s (positive is the
+// rate of descent). Alt hold flies this in place of the failsafe profile.
+float baroLandDescentRateCmS(float altitudeCm);
+
 // True while the pilot-invoked baro landing owns the descent. Alt hold reads
 // this to drive the descent profile, and core.c to keep the hold modes engaged.
 bool baroLandIsActive(void);
@@ -40,4 +45,5 @@ bool baroLandIsActive(void);
 static inline void baroLandInit(void) { }
 static inline void baroLandUpdate(void) { }
 static inline bool baroLandIsActive(void) { return false; }
+static inline float baroLandDescentRateCmS(float altitudeCm) { UNUSED(altitudeCm); return 0.0f; }
 #endif // USE_BARO_LAND

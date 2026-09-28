@@ -321,6 +321,9 @@
 #endif
 
 #ifdef USE_BARO_LAND
+#define PARAM_NAME_BARO_LAND_DESCENT_RATE "baroland_descent_rate"
+#define PARAM_NAME_BARO_LAND_MAX_DESCENT_RATE "baroland_max_descent_rate"
+#define PARAM_NAME_BARO_LAND_FLARE_ALTITUDE "baroland_flare_altitude"
 #define PARAM_NAME_BARO_LAND_TIMEOUT "baroland_timeout"
 #define PARAM_NAME_BARO_LAND_TOUCHDOWN_TIME "baroland_touchdown_time"
 #define PARAM_NAME_BARO_LAND_TOUCHDOWN_VELOCITY "baroland_touchdown_velocity"

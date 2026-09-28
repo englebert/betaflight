@@ -67,7 +67,19 @@ altHoldState_t altHold;
 static float altHoldMaxClimbRate(void)
 {
     const float rescueRate = flightPlanNavGetRescueVerticalRateCmS();
-    return (rescueRate > 0.0f) ? rescueRate : altHold.maxClimbRate;
+    if (rescueRate > 0.0f) {
+        return rescueRate;
+    }
+#ifdef USE_BARO_LAND
+    // A BAROLAND descent is bounded by its own profile, not by the pilot's
+    // alt_hold_climb_rate, which may legitimately be set low or to zero. This
+    // caps the commanded rate and sizes the target-altitude window below, so
+    // both have to see the landing rate or the descent stalls.
+    if (baroLandIsActive()) {
+        return MAX(altHold.maxClimbRate, (float)baroLandConfig()->maxDescentRate);
+    }
+#endif
+    return altHold.maxClimbRate;
 }
 
 static void altHoldReset(void)
@@ -134,9 +146,7 @@ static void altHoldUpdateTargetAltitude(timeUs_t taskIntervalUs)
             
     // if failsafe is active, and we get here, we are in failsafe landing mode, it controls throttle.
     // a switch-invoked rescue that cannot stage or has aborted drives the same descent.
-    // BAROLAND is the pilot asking for that same descent deliberately; the throttle
-    // stick is ignored throughout, so the stickFactor computed above is discarded.
-    if (failsafeIsActive() || baroLandIsActive() || flightPlanNavIsRescueDescentActive()) {
+    if (failsafeIsActive() || flightPlanNavIsRescueDescentActive()) {
         // descend at up to 10 times faster when high
         // default landing timeout is now 60s; must to get the quad down within this limit
         // need a rapid descent when initiated high, and must slow down closer to ground
@@ -148,6 +158,16 @@ static void altHoldUpdateTargetAltitude(timeUs_t taskIntervalUs)
 
     const float maxClimbRate = altHoldMaxClimbRate();
     altHold.targetVelocity = stickFactor * maxClimbRate;
+
+#ifdef USE_BARO_LAND
+    // BAROLAND flies its own profile in absolute cm/s, so the touchdown rate is
+    // set by baroland_descent_rate rather than inherited from alt_hold_climb_rate
+    // (which also governs the pilot's throttle-stick authority). The throttle
+    // stick is ignored throughout, so the stickFactor above is discarded.
+    if (baroLandIsActive()) {
+        altHold.targetVelocity = -constrainf(baroLandDescentRateCmS(getAltitudeCmControl()), 0.0f, maxClimbRate);
+    }
+#endif
     // prevent pilot altitude adjustments from moving the target altitude so far away from current altitude
     // that it might be difficult to get back to a similar target altitude in a reasonable time.
     // the altitude target cannot be moved to a location that cannot be reached in 1s at maxClimbRate
@@ -160,7 +180,9 @@ static void altHoldUpdateTargetAltitude(timeUs_t taskIntervalUs)
 static void altHoldUpdate(timeUs_t taskIntervalUs)
 {
 
-    if (altHoldConfig()->climbRate) {
+    // climbRate zero disables the pilot's stick adjustment, but a BAROLAND
+    // descent is set here too and must still run
+    if (altHoldConfig()->climbRate || baroLandIsActive()) {
         altHoldUpdateTargetAltitude(taskIntervalUs); // check if the pilot has changed the target altitude using sticks
     }
 

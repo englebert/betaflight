@@ -21,10 +21,26 @@ BAROLAND is that missing switch.
 The descent itself is not new code. It reuses the failsafe auto-landing path
 verbatim, so the behaviour in the air is the behaviour already flown today:
 
-- **Descent profile** — the altitude-scaled curve in
-  `alt_hold_multirotor.c:139`: about 1x `alt_hold_climb_rate` below 20 m,
-  doubling at 20 m, up to 10x when very high, decelerating to a constant rate
-  in the last 2 m. The throttle stick is ignored throughout.
+- **Descent profile** — BAROLAND's own, in absolute cm/s, set in
+  `baroLandDescentRateCmS()`. Flat `baroland_descent_rate` at and below
+  `baroland_flare_altitude`, ramping linearly with height above it to
+  `baroland_max_descent_rate` ten flare-heights up. The throttle stick is
+  ignored throughout.
+
+  It does *not* reuse the failsafe curve, for two reasons. That curve has no
+  flare: below 2 m it clamps to a flat 1x `alt_hold_climb_rate` and the
+  altitude target marches below zero regardless, so whatever rate is commanded
+  near the ground is the rate it touches down at. And tying the landing rate to
+  `alt_hold_climb_rate` means softening the touchdown also cripples the pilot's
+  throttle-stick authority in ordinary alt hold.
+
+  | Height | Rate on defaults |
+  | --- | --- |
+  | at or below 1.5 m | 0.40 m/s |
+  | 3 m | 0.63 m/s |
+  | 5 m | 0.94 m/s |
+  | 10 m | 1.72 m/s |
+  | 15 m and above | 2.50 m/s |
 - **Position** — pos hold engages alongside alt hold, as it does under
   failsafe. With a valid XY estimate the craft holds its spot; with no GPS fix
   `updatePosHold()` zeroes its output and the craft descends level, drifting
@@ -74,15 +90,23 @@ Then assign an aux switch to **BAROLAND** in Configurator's Modes tab.
 
 | Setting | Default | Range | Meaning |
 | --- | --- | --- | --- |
+| `baroland_descent_rate` | 40 | 10-200 | cm/s; the final approach rate, flown through touchdown. |
+| `baroland_max_descent_rate` | 250 | 50-1000 | cm/s; the rate the profile tops out at when high. |
+| `baroland_flare_altitude` | 150 | 20-1000 | cm; at and below this height the descent holds `baroland_descent_rate`. |
 | `baroland_timeout` | 60 | 0-250 | Seconds in the mode before the backstop disarm. 0 disables it. |
 | `baroland_touchdown_time` | 10 | 1-50 | Tenths of a second the touchdown conditions must hold. |
 | `baroland_touchdown_velocity` | 50 | 10-200 | cm/s; vertical speed at or below this counts as "no longer descending". |
 
-The descent rate is not a BAROLAND setting — it comes from
-`alt_hold_climb_rate` and the autopilot gains (`ap_altitude_*`,
-`ap_hover_throttle`), shared with alt hold and failsafe landing.
-`ap_hover_throttle` is the single biggest knob for descent quality; set it to
-the craft's real hover throttle.
+The descent rate is BAROLAND's own and independent of `alt_hold_climb_rate`,
+so that can stay at whatever suits the pilot's throttle stick. How well the
+craft *tracks* the commanded rate still comes from the shared autopilot gains
+(`ap_altitude_*`, `ap_hover_throttle`). `ap_hover_throttle` is the single
+biggest knob for descent quality; set it to the craft's real hover throttle.
+
+Note that no rangefinder means no ground-effect compensation
+(`position_estimator.c:897` returns 1.0 without one), so the barometer is least
+trustworthy in exactly the last half metre. A slow `baroland_descent_rate` is
+what keeps that from mattering much.
 
 ## Behaviour notes
 

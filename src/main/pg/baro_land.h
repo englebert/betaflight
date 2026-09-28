@@ -22,6 +22,9 @@
 #include "pg/pg.h"
 
 typedef struct baroLandConfig_s {
+    uint16_t flareAltitude;     // cm; at and below this height the descent holds descentRate
+    uint16_t maxDescentRate;    // cm/s; the rate the profile tops out at when high
+    uint8_t descentRate;        // cm/s; the final approach rate flown through touchdown
     uint8_t timeout;            // seconds in the mode before the backstop disarm; 0 disables it
     uint8_t touchdownTime;      // tenths of a second the touchdown conditions must hold before disarming
     uint8_t touchdownVelocity;  // cm/s; vertical speed at or below this counts as "no longer descending"
